@@ -1,7 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { finalize, switchMap, timer } from 'rxjs';
 import { ApiService } from '../api/api.service';
-import { DetectionResult } from '../types/conflict';
+import { DetectionResult, PreviewBlocker } from '../types/conflict';
 
 @Injectable({ providedIn: 'root' })
 export class ConflictDetectionHook {
@@ -32,4 +32,14 @@ export function apiErrorMessage(error: unknown): string {
     return body?.error?.message ?? 'Request failed';
   }
   return 'Request failed';
+}
+
+export function apiErrorBlockers(error: unknown): PreviewBlocker[] {
+  if (typeof error === 'object' && error !== null) {
+    const details = (error as { error?: { error?: { details?: unknown } } }).error?.error?.details;
+    if (Array.isArray(details)) {
+      return details.filter((item): item is PreviewBlocker => typeof item === 'object' && item !== null && 'kind' in item && 'reason' in item);
+    }
+  }
+  return [];
 }

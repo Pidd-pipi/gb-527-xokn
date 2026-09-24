@@ -24,6 +24,19 @@ const (
 	ResolutionStatusRejected      = "rejected"
 )
 
+const (
+	PreviewDispositionKept         = "kept"
+	PreviewDispositionReassigned   = "reassigned"
+	PreviewDispositionUseAlternate = "use_alternate"
+	PreviewDispositionManual       = "manual"
+)
+
+const (
+	PreviewBlockerWindow          = "window"
+	PreviewBlockerTargetStation   = "target_station"
+	PreviewBlockerAlternateWindow = "alternate_window"
+)
+
 func CanTransitionResolution(from, to string) bool {
 	switch from {
 	case ResolutionStatusDetected:

@@ -37,10 +37,12 @@ docker compose down -v --remove-orphans
 - `/stations`：地面站容量、天线数、频段、转向缓冲和窗口占用。
 - `/satellites`：规划资产、优先权、最短接触需求和按卫星分组的时间线。
 - `/windows`：UTC 候选窗口筛选、创建、兼容性提交和不可移动锁定。
-- `/conflicts`：冲突扫描、证据、稳定排序建议、提交复核和人工接受/拒绝。
+- `/conflicts`：冲突扫描、证据、稳定排序建议、提交复核、只读预演和人工接受/拒绝。
 - `/audit`：request ID、参数摘要、版本前后差异、算法权重和人工选择。
 
 接受建议只会在一个数据库事务内核对所有关联窗口版本并保存 reviewer 的选择，不会自动移动窗口。只有 accepted 记录可以通过导出 API 形成离线规划记录。
+
+待复核记录可以先调 `/api/v1/conflicts/:id/preview` 做只读预演：按当前窗口版本模拟所选方案，逐项说明窗口保留、改派、使用备选窗口或需要人工处理，并列出执行后仍存在的冲突数量和原因。预演不写窗口、审计或复核状态；若建议引用的窗口、目标站或备选窗口已变化或不存在，返回 409 并在 `error.details` 中列出具体阻塞项。
 
 ## 技术栈与目录
 
@@ -99,6 +101,7 @@ docker compose down -v --remove-orphans
 | POST | `/api/v1/conflicts/detect` | 在 UTC 范围运行确定性冲突检测 |
 | GET | `/api/v1/conflicts[/:id]` | 建议、评分和证据 |
 | POST | `/api/v1/conflicts/:id/submit` | `proposed -> pending_review` |
+| POST | `/api/v1/conflicts/:id/preview` | 只读预演所选方案：逐项窗口处置、执行后剩余冲突；引用数据变化返回 409 阻塞项 |
 | POST | `/api/v1/conflicts/:id/review` | reviewer 接受或拒绝 |
 | GET | `/api/v1/conflicts/:id/export` | accepted 规划记录，不含控制命令 |
 | GET | `/api/v1/audit` | 审计分页列表 |

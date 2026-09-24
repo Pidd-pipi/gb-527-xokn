@@ -14,6 +14,43 @@ type ConflictActionRequest struct {
 	ReviewNote      string `json:"review_note" validate:"omitempty,max=500"`
 }
 
+type ConflictPreviewRequest struct {
+	ExpectedVersion uint   `json:"expected_version" validate:"required,gte=1"`
+	ActionKey       string `json:"action_key" validate:"required,max=120"`
+}
+
+type PreviewBlocker struct {
+	Kind   string `json:"kind"`
+	ID     uint   `json:"id"`
+	Reason string `json:"reason"`
+	Detail string `json:"detail"`
+}
+
+type PreviewDisposition struct {
+	WindowID          uint   `json:"window_id"`
+	Disposition       string `json:"disposition"`
+	Reason            string `json:"reason"`
+	TargetStationID   *uint  `json:"target_station_id,omitempty"`
+	AlternateWindowID *uint  `json:"alternate_window_id,omitempty"`
+}
+
+type RemainingConflict struct {
+	ConflictType string `json:"conflict_type"`
+	Summary      string `json:"summary"`
+	WindowIDs    []uint `json:"window_ids"`
+}
+
+type ConflictPreviewResponse struct {
+	ResolutionID       uint                 `json:"resolution_id"`
+	ActionKey          string               `json:"action_key"`
+	ActionType         string               `json:"action_type"`
+	RequiresManual     bool                 `json:"requires_manual"`
+	Dispositions       []PreviewDisposition `json:"dispositions"`
+	RemainingConflicts int                  `json:"remaining_conflicts"`
+	RemainingReasons   []RemainingConflict  `json:"remaining_reasons"`
+	EvaluatedAt        time.Time            `json:"evaluated_at"`
+}
+
 type ScoreBreakdown struct {
 	PriorityLoss       float64 `json:"priority_loss"`
 	MovementDistanceKM float64 `json:"movement_distance_km"`

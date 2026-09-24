@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"time"
@@ -221,6 +222,232 @@ func (service *ConflictResolutionService) Review(id uint, request dto.ConflictAc
 	return service.Get(id)
 }
 
+// Preview rehearses the selected plan against current planning data without
+// touching windows, audit events, or the review state. Referenced entities
+// that changed or disappeared are reported as 409 blockers instead.
+func (service *ConflictResolutionService) Preview(id uint, request dto.ConflictPreviewRequest) (dto.ConflictPreviewResponse, error) {
+	resolution, err := service.repository.Get(id)
+	if err != nil {
+		return dto.ConflictPreviewResponse{}, MapRepositoryError("conflict resolution", err)
+	}
+	if resolution.ResolutionStatus != constants.ResolutionStatusPendingReview {
+		return dto.ConflictPreviewResponse{}, Conflict("invalid_state", "only pending review conflicts can be previewed", nil)
+	}
+	if resolution.Version != request.ExpectedVersion {
+		return dto.ConflictPreviewResponse{}, Conflict("version_conflict", "conflict resolution changed; reload before previewing", nil)
+	}
+	selected, err := selectSuggestion(resolution.SuggestionsJSON, request.ActionKey)
+	if err != nil {
+		return dto.ConflictPreviewResponse{}, err
+	}
+	windowIDs := []uint{}
+	if err := json.Unmarshal([]byte(resolution.WindowIDsJSON), &windowIDs); err != nil {
+		return dto.ConflictPreviewResponse{}, Internal("stored window IDs are invalid", err)
+	}
+	versions := map[string]uint{}
+	if err := json.Unmarshal([]byte(resolution.WindowVersionsJSON), &versions); err != nil {
+		return dto.ConflictPreviewResponse{}, Internal("stored window version snapshot is invalid", err)
+	}
+	windows, err := service.windows.GetMany(windowIDs)
+	if err != nil {
+		return dto.ConflictPreviewResponse{}, Internal("could not load conflict windows for preview", err)
+	}
+	current := map[uint]model.ContactWindow{}
+	for _, window := range windows {
+		current[window.ID] = window
+	}
+	blockers := make([]dto.PreviewBlocker, 0)
+	members := make([]model.ContactWindow, 0, len(windowIDs))
+	for _, windowID := range windowIDs {
+		window, ok := current[windowID]
+		if !ok {
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerWindow, ID: windowID, Reason: "missing", Detail: "conflict window no longer exists"})
+			continue
+		}
+		stored := versions[strconv.FormatUint(uint64(windowID), 10)]
+		if stored != window.Version {
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerWindow, ID: windowID, Reason: "changed", Detail: fmt.Sprintf("window is at version %d but the conflict evidence was built from version %d", window.Version, stored)})
+		}
+		members = append(members, window)
+	}
+	var affected *model.ContactWindow
+	if len(selected.MoveWindowIDs) > 0 {
+		if window, ok := current[selected.MoveWindowIDs[0]]; ok {
+			moved := window
+			affected = &moved
+		}
+	}
+	if selected.TargetStationID != nil {
+		station, stationErr := service.stations.Get(*selected.TargetStationID)
+		switch {
+		case stationErr != nil && isStatus(MapRepositoryError("ground station", stationErr), http.StatusNotFound):
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerTargetStation, ID: *selected.TargetStationID, Reason: "missing", Detail: "target station no longer exists"})
+		case stationErr != nil:
+			return dto.ConflictPreviewResponse{}, MapRepositoryError("ground station", stationErr)
+		case station.StationStatus != "active":
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerTargetStation, ID: station.ID, Reason: "inactive", Detail: fmt.Sprintf("target station status is %s", station.StationStatus)})
+		case affected != nil && !containsString(decodeStrings(station.SupportedBandsJSON), affected.Band):
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerTargetStation, ID: station.ID, Reason: "incompatible", Detail: fmt.Sprintf("target station no longer supports band %s", affected.Band)})
+		}
+	}
+	var alternate *model.ContactWindow
+	if selected.AlternateWindowID != nil {
+		window, windowErr := service.windows.Get(*selected.AlternateWindowID)
+		switch {
+		case windowErr != nil && isStatus(MapRepositoryError("contact window", windowErr), http.StatusNotFound):
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerAlternateWindow, ID: *selected.AlternateWindowID, Reason: "missing", Detail: "alternate window no longer exists"})
+		case windowErr != nil:
+			return dto.ConflictPreviewResponse{}, MapRepositoryError("contact window", windowErr)
+		case window.WindowStatus == constants.WindowStatusCancelled:
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerAlternateWindow, ID: window.ID, Reason: "cancelled", Detail: "alternate window has been cancelled"})
+		case affected != nil && (window.SatelliteID != affected.SatelliteID || window.SourceVersion != affected.SourceVersion):
+			blockers = append(blockers, dto.PreviewBlocker{Kind: constants.PreviewBlockerAlternateWindow, ID: window.ID, Reason: "changed", Detail: "alternate window no longer matches the affected window satellite and source version"})
+		default:
+			candidate := window
+			alternate = &candidate
+		}
+	}
+	if len(blockers) > 0 {
+		return dto.ConflictPreviewResponse{}, Conflict("preview_blocked", "selected plan references planning data that changed or no longer exists", nil).WithDetails(blockers)
+	}
+	dispositions := previewDispositions(members, selected)
+	simulated, err := service.simulatedWindows(members, selected, alternate)
+	if err != nil {
+		return dto.ConflictPreviewResponse{}, err
+	}
+	stations, err := service.stations.ListAll()
+	if err != nil {
+		return dto.ConflictPreviewResponse{}, Internal("could not load stations for preview", err)
+	}
+	assets, err := service.assets.ListAll()
+	if err != nil {
+		return dto.ConflictPreviewResponse{}, Internal("could not load satellites for preview", err)
+	}
+	stationMap := map[uint]model.GroundStation{}
+	assetMap := map[uint]model.SatelliteAsset{}
+	for _, station := range stations {
+		stationMap[station.ID] = station
+	}
+	for _, asset := range assets {
+		assetMap[asset.ID] = asset
+	}
+	groups := scheduler.Detect(scheduler.DetectionContext{Windows: simulated, Stations: stationMap, Satellites: assetMap})
+	remaining := make([]dto.RemainingConflict, 0, len(groups))
+	for _, group := range groups {
+		ids := make([]uint, 0, len(group.Windows))
+		for _, window := range group.Windows {
+			ids = append(ids, window.ID)
+		}
+		remaining = append(remaining, dto.RemainingConflict{ConflictType: group.ConflictType, Summary: group.Summary, WindowIDs: ids})
+	}
+	return dto.ConflictPreviewResponse{
+		ResolutionID: resolution.ID, ActionKey: selected.ActionKey, ActionType: selected.ActionType, RequiresManual: selected.RequiresManual,
+		Dispositions: dispositions, RemainingConflicts: len(remaining), RemainingReasons: remaining, EvaluatedAt: time.Now().UTC(),
+	}, nil
+}
+
+func previewDispositions(members []model.ContactWindow, selected dto.ResolutionSuggestion) []dto.PreviewDisposition {
+	keep := idSet(selected.KeepWindowIDs)
+	move := idSet(selected.MoveWindowIDs)
+	dispositions := make([]dto.PreviewDisposition, 0, len(members))
+	for _, window := range members {
+		item := dto.PreviewDisposition{WindowID: window.ID}
+		switch {
+		case selected.RequiresManual:
+			item.Disposition = constants.PreviewDispositionManual
+			item.Reason = "selected plan requires a human planning decision; no automatic change is simulated"
+		case keep[window.ID]:
+			item.Disposition = constants.PreviewDispositionKept
+			item.Reason = "plan keeps this window on its current station and interval"
+		case move[window.ID] && selected.TargetStationID != nil:
+			item.Disposition = constants.PreviewDispositionReassigned
+			item.TargetStationID = selected.TargetStationID
+			item.Reason = fmt.Sprintf("plan would reassign this window to station #%d", *selected.TargetStationID)
+		case move[window.ID] && selected.AlternateWindowID != nil:
+			item.Disposition = constants.PreviewDispositionUseAlternate
+			item.AlternateWindowID = selected.AlternateWindowID
+			item.Reason = fmt.Sprintf("plan would replace this window with alternate window #%d", *selected.AlternateWindowID)
+		case move[window.ID]:
+			item.Disposition = constants.PreviewDispositionManual
+			item.Reason = "plan moves this window but provides no automatic target"
+		default:
+			item.Disposition = constants.PreviewDispositionKept
+			item.Reason = "plan leaves this window on its current station and interval"
+		}
+		dispositions = append(dispositions, item)
+	}
+	return dispositions
+}
+
+func (service *ConflictResolutionService) simulatedWindows(members []model.ContactWindow, selected dto.ResolutionSuggestion, alternate *model.ContactWindow) ([]model.ContactWindow, error) {
+	if len(members) == 0 {
+		return nil, Internal("conflict resolution has no windows to simulate", nil)
+	}
+	from, to := members[0].StartAt, members[0].EndAt
+	for _, window := range members[1:] {
+		if window.StartAt.Before(from) {
+			from = window.StartAt
+		}
+		if window.EndAt.After(to) {
+			to = window.EndAt
+		}
+	}
+	if alternate != nil {
+		if alternate.StartAt.Before(from) {
+			from = alternate.StartAt
+		}
+		if alternate.EndAt.After(to) {
+			to = alternate.EndAt
+		}
+	}
+	windows, err := service.windows.ListRange(from, to)
+	if err != nil {
+		return nil, Internal("could not load windows for preview simulation", err)
+	}
+	if selected.RequiresManual {
+		return windows, nil
+	}
+	reassigned := map[uint]uint{}
+	replaced := map[uint]bool{}
+	for _, windowID := range selected.MoveWindowIDs {
+		if selected.TargetStationID != nil {
+			reassigned[windowID] = *selected.TargetStationID
+		}
+		if selected.AlternateWindowID != nil {
+			replaced[windowID] = true
+		}
+	}
+	simulated := make([]model.ContactWindow, 0, len(windows)+1)
+	present := map[uint]bool{}
+	for _, window := range windows {
+		if replaced[window.ID] {
+			continue
+		}
+		if target, ok := reassigned[window.ID]; ok {
+			window.StationID = target
+		}
+		present[window.ID] = true
+		simulated = append(simulated, window)
+	}
+	if alternate != nil && !present[alternate.ID] {
+		simulated = append(simulated, *alternate)
+	}
+	return simulated, nil
+}
+
+func idSet(ids []uint) map[uint]bool {
+	set := make(map[uint]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+func isStatus(err error, status int) bool {
+	var appError *AppError
+	return errors.As(err, &appError) && appError.Status == status
+}
+
 func (service *ConflictResolutionService) Export(id uint) (map[string]any, error) {
 	resolution, err := service.Get(id)
 	if err != nil {
@@ -304,5 +531,3 @@ func mustJSON(value any) string { encoded, _ := json.Marshal(value); return stri
 func resolutionSummary(resolution model.ConflictResolution) map[string]any {
 	return map[string]any{"conflict_type": resolution.ConflictType, "status": resolution.ResolutionStatus, "version": resolution.Version, "resolved_by": resolution.ResolvedBy}
 }
-
-var _ = errors.Is

@@ -20,6 +20,7 @@ type AppError struct {
 	Code    string
 	Message string
 	Cause   error
+	Details any
 }
 
 func (err *AppError) Error() string {
@@ -30,6 +31,11 @@ func (err *AppError) Error() string {
 }
 
 func (err *AppError) Unwrap() error { return err.Cause }
+
+func (err *AppError) WithDetails(details any) *AppError {
+	err.Details = details
+	return err
+}
 
 func BadRequest(code, message string, causes ...error) *AppError {
 	var cause error

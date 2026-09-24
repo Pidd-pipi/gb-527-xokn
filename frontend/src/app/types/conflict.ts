@@ -57,3 +57,37 @@ export interface DetectionResult {
   conflict_count: number;
   resolutions: ConflictResolution[];
 }
+
+export type PreviewDispositionKind = 'kept' | 'reassigned' | 'use_alternate' | 'manual';
+
+export interface PreviewDisposition {
+  window_id: number;
+  disposition: PreviewDispositionKind;
+  reason: string;
+  target_station_id?: number;
+  alternate_window_id?: number;
+}
+
+export interface PreviewBlocker {
+  kind: 'window' | 'target_station' | 'alternate_window';
+  id: number;
+  reason: string;
+  detail: string;
+}
+
+export interface RemainingConflict {
+  conflict_type: ConflictType;
+  summary: string;
+  window_ids: number[];
+}
+
+export interface ConflictPreview {
+  resolution_id: number;
+  action_key: string;
+  action_type: string;
+  requires_manual: boolean;
+  dispositions: PreviewDisposition[];
+  remaining_conflicts: number;
+  remaining_reasons: RemainingConflict[];
+  evaluated_at: string;
+}
