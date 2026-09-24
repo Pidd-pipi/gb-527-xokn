@@ -74,6 +74,25 @@ func (handler *ConflictResolutionHandler) Submit(context *gin.Context) {
 	WriteData(context, http.StatusOK, resolution)
 }
 
+func (handler *ConflictResolutionHandler) Preview(context *gin.Context) {
+	id, err := PathID(context)
+	if err != nil {
+		WriteError(context, err)
+		return
+	}
+	var request dto.ConflictPreviewRequest
+	if err := BindAndValidate(context, &request); err != nil {
+		WriteError(context, err)
+		return
+	}
+	preview, err := handler.service.Preview(id, request)
+	if err != nil {
+		WriteError(context, err)
+		return
+	}
+	WriteData(context, http.StatusOK, preview)
+}
+
 func (handler *ConflictResolutionHandler) Review(context *gin.Context) {
 	id, err := PathID(context)
 	if err != nil {

@@ -57,6 +57,14 @@ func (repository *ContactWindowRepository) ListRange(from, to time.Time) ([]mode
 	return windows, nil
 }
 
+func (repository *ContactWindowRepository) ListAll() ([]model.ContactWindow, error) {
+	var windows []model.ContactWindow
+	if err := repository.db.Order("start_at ASC, id ASC").Find(&windows).Error; err != nil {
+		return nil, fmt.Errorf("list all contact windows: %w", err)
+	}
+	return windows, nil
+}
+
 func (repository *ContactWindowRepository) Get(id uint) (model.ContactWindow, error) {
 	var window model.ContactWindow
 	if err := repository.db.First(&window, id).Error; err != nil {

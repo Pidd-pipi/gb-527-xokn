@@ -110,6 +110,10 @@ func newGroup(conflictType string, windows []model.ContactWindow, capacity, peak
 	}
 }
 
+func ContainsBand(encoded, band string) bool {
+	return containsBand(encoded, band)
+}
+
 func containsBand(encoded, band string) bool {
 	clean := strings.NewReplacer("[", "", "]", "", "\"", "", " ", "").Replace(encoded)
 	for _, value := range strings.Split(clean, ",") {

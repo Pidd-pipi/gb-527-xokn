@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { ApiEnvelope, LoginResponse, PageEnvelope } from '../types/api';
 import { AuditEvent, GroundStation, SatelliteAsset } from '../types/resources';
 import { ContactWindow, ContactWindowInput } from '../types/window';
-import { ConflictResolution, DetectionResult } from '../types/conflict';
+import { ConflictResolution, ConflictPreview, DetectionResult } from '../types/conflict';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -69,6 +69,13 @@ export class ApiService {
 
   submitConflict(id: number, expectedVersion: number): Observable<ApiEnvelope<ConflictResolution>> {
     return this.http.post<ApiEnvelope<ConflictResolution>>(`${this.root}/conflicts/${id}/submit`, { expected_version: expectedVersion });
+  }
+
+  previewConflict(id: number, expectedVersion: number, actionKey: string): Observable<ApiEnvelope<ConflictPreview>> {
+    return this.http.post<ApiEnvelope<ConflictPreview>>(`${this.root}/conflicts/${id}/preview`, {
+      expected_version: expectedVersion,
+      action_key: actionKey,
+    });
   }
 
   reviewConflict(id: number, expectedVersion: number, decision: 'accepted' | 'rejected', actionKey: string, reviewNote: string): Observable<ApiEnvelope<ConflictResolution>> {

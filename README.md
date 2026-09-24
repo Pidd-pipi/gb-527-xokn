@@ -37,7 +37,7 @@ docker compose down -v --remove-orphans
 - `/stations`：地面站容量、天线数、频段、转向缓冲和窗口占用。
 - `/satellites`：规划资产、优先权、最短接触需求和按卫星分组的时间线。
 - `/windows`：UTC 候选窗口筛选、创建、兼容性提交和不可移动锁定。
-- `/conflicts`：冲突扫描、证据、稳定排序建议、提交复核和人工接受/拒绝。
+- `/conflicts`：冲突扫描、证据、稳定排序建议、提交复核、接受前只读预演和人工接受/拒绝。
 - `/audit`：request ID、参数摘要、版本前后差异、算法权重和人工选择。
 
 接受建议只会在一个数据库事务内核对所有关联窗口版本并保存 reviewer 的选择，不会自动移动窗口。只有 accepted 记录可以通过导出 API 形成离线规划记录。
@@ -99,11 +99,21 @@ docker compose down -v --remove-orphans
 | POST | `/api/v1/conflicts/detect` | 在 UTC 范围运行确定性冲突检测 |
 | GET | `/api/v1/conflicts[/:id]` | 建议、评分和证据 |
 | POST | `/api/v1/conflicts/:id/submit` | `proposed -> pending_review` |
+| POST | `/api/v1/conflicts/:id/preview` | 只读预演所选方案（reviewer/admin），不写窗口、审计或复核状态 |
 | POST | `/api/v1/conflicts/:id/review` | reviewer 接受或拒绝 |
 | GET | `/api/v1/conflicts/:id/export` | accepted 规划记录，不含控制命令 |
 | GET | `/api/v1/audit` | 审计分页列表 |
 
 `/healthz` 表示进程存活，`/readyz` 真实 ping 数据库。
+
+### 建议只读预演
+
+待复核（`pending_review`）的冲突可以在接受前调用 `POST /api/v1/conflicts/:id/preview`，请求体为 `expected_version` 与 `action_key`。预演按**当前窗口版本**在内存中计算所选方案：
+
+- `window_dispositions` 逐项给出每个冲突窗口的处置：`keep`（保留）、`reassign`（改派到目标站）、`use_alternate_window`（使用同源备选窗口）或 `manual`（人工处理），并附说明和目标站/备选窗口。
+- `remaining_conflicts` 与 `remaining_conflict_count` 是对模拟执行后的窗口集合重跑同一确定性检测得到的仍存在冲突及其类型、涉及窗口和原因。
+- 预演不开写事务、不移动窗口、不产生审计事件，也不改变复核状态；原有的 submit/review 流程完全照旧。
+- 引用的窗口版本与检测快照不一致、窗口被取消或锁定、目标站不存在/停用/频段不兼容/容量耗尽，或备选窗口不存在、取消、失去源/频段兼容性、产生新重叠时，返回 409 `preview_blocked`，`error.details.blockers` 逐项列出阻塞类型、涉及资源和期望/当前版本。前端不吞掉该 409，直接在冲突页显示。
 
 ## 共享枚举位置
 

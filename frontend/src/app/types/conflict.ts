@@ -57,3 +57,43 @@ export interface DetectionResult {
   conflict_count: number;
   resolutions: ConflictResolution[];
 }
+
+export type PreviewDisposition = 'keep' | 'reassign' | 'use_alternate_window' | 'manual';
+
+export interface PreviewBlocker {
+  code: string;
+  message: string;
+  window_id?: number;
+  station_id?: number;
+  alternate_window_id?: number;
+  expected_version?: number;
+  current_version?: number;
+}
+
+export interface PreviewWindowDisposition {
+  window_id: number;
+  disposition: PreviewDisposition;
+  disposition_label: string;
+  target_station_id?: number;
+  target_station_code?: string;
+  alternate_window_id?: number;
+  note: string;
+}
+
+export interface PreviewRemainingConflict {
+  conflict_type: ConflictType;
+  window_ids: number[];
+  summary: string;
+}
+
+export interface ConflictPreview {
+  resolution_id: number;
+  conflict_type: ConflictType;
+  action_key: string;
+  action_type: string;
+  requires_manual: boolean;
+  window_dispositions: PreviewWindowDisposition[];
+  remaining_conflicts: PreviewRemainingConflict[];
+  remaining_conflict_count: number;
+  readonly: boolean;
+}

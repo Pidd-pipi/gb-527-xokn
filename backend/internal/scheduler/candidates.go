@@ -174,6 +174,22 @@ func (generator *CandidateGenerator) compatibleStation(group ConflictGroup) (Sug
 	return Suggestion{}, false
 }
 
+// AlternateAvailable reports whether candidate can currently replace affected
+// without colliding with another window. Group members are ignored as they are
+// part of the same unresolved conflict.
+func (generator *CandidateGenerator) AlternateAvailable(candidate, affected model.ContactWindow, groupMemberIDs []uint) bool {
+	members := make(map[uint]bool, len(groupMemberIDs))
+	for _, id := range groupMemberIDs {
+		members[id] = true
+	}
+	return generator.alternateAvailable(candidate, affected, members)
+}
+
+// ConcurrentAt reports how many non-cancelled windows overlap target on a station.
+func (generator *CandidateGenerator) ConcurrentAt(stationID uint, target model.ContactWindow) int {
+	return generator.concurrentAt(stationID, target)
+}
+
 func (generator *CandidateGenerator) alternateAvailable(candidate, affected model.ContactWindow, groupMembers map[uint]bool) bool {
 	station, ok := generator.stations[candidate.StationID]
 	if !ok || station.StationStatus != "active" || !containsBand(station.SupportedBandsJSON, candidate.Band) {

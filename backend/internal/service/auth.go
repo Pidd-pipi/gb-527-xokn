@@ -19,6 +19,7 @@ type AppError struct {
 	Status  int
 	Code    string
 	Message string
+	Details any
 	Cause   error
 }
 
@@ -49,6 +50,9 @@ func NotFound(resource string, cause error) *AppError {
 }
 func Conflict(code, message string, cause error) *AppError {
 	return &AppError{Status: http.StatusConflict, Code: code, Message: message, Cause: cause}
+}
+func ConflictWithDetails(code, message string, details any) *AppError {
+	return &AppError{Status: http.StatusConflict, Code: code, Message: message, Details: details}
 }
 func Internal(message string, cause error) *AppError {
 	return &AppError{Status: http.StatusInternalServerError, Code: "internal_error", Message: message, Cause: cause}
