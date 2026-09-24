@@ -1,0 +1,72 @@
+name: satellite-contact-window-deconfliction
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-satellite-contact-window-deconfliction}-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contact_planning}
+      POSTGRES_USER: ${POSTGRES_USER:-planner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-planner_local_527}
+    ports:
+      - "${POSTGRES_PORT:-57527}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-planner} -d ${POSTGRES_DB:-contact_planning}"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ${COMPOSE_PROJECT_NAME:-satellite-contact-window-deconfliction}-backend
+    environment:
+      PORT: "8080"
+      DB_DRIVER: postgres
+      DB_DSN: ${DB_DSN:-host=postgres user=planner password=planner_local_527 dbname=contact_planning port=5432 sslmode=disable TimeZone=UTC}
+      DB_AUTO_MIGRATE: ${DB_AUTO_MIGRATE:-true}
+      JWT_SECRET: ${JWT_SECRET:-local-satellite-contact-planning-secret-527}
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-480}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:18527}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-180}
+      WEIGHT_PRIORITY_LOSS: ${WEIGHT_PRIORITY_LOSS:-4.0}
+      WEIGHT_MOVEMENT_DISTANCE: ${WEIGHT_MOVEMENT_DISTANCE:-0.02}
+      WEIGHT_CONTACT_DURATION: ${WEIGHT_CONTACT_DURATION:-0.003}
+      WEIGHT_RESOURCE_MARGIN: ${WEIGHT_RESOURCE_MARGIN:-2.0}
+    ports:
+      - "${BACKEND_PORT:-19527}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-satellite-contact-window-deconfliction}-frontend
+    ports:
+      - "${FRONTEND_PORT:-18527}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/api/healthz"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: ${COMPOSE_PROJECT_NAME:-satellite-contact-window-deconfliction}-postgres-data

@@ -1,0 +1,25 @@
+<ng-container *ngIf="auth.authenticated(); else guest">
+  <div class="shell">
+    <aside class="rail">
+      <a class="brand" routerLink="/windows" aria-label="Orbit Desk home">
+        <span class="brand-mark">OD</span>
+        <span><strong>ORBIT DESK</strong><small>CONTACT PLANNING</small></span>
+      </a>
+      <nav aria-label="Planning sections">
+        <a routerLink="/stations" routerLinkActive="active"><span class="nav-code">01</span>Stations</a>
+        <a routerLink="/satellites" routerLinkActive="active"><span class="nav-code">02</span>Satellites</a>
+        <a routerLink="/windows" routerLinkActive="active"><span class="nav-code">03</span>Windows</a>
+        <a routerLink="/conflicts" routerLinkActive="active"><span class="nav-code">04</span>Conflicts</a>
+        <a *ngIf="auth.canReview()" routerLink="/audit" routerLinkActive="active"><span class="nav-code">05</span>Audit</a>
+      </nav>
+      <div class="rail-footer">
+        <span class="role-dot"></span>
+        <div><strong>{{ auth.user()?.username }}</strong><small>{{ auth.user()?.role }}</small></div>
+        <button mat-button [matMenuTriggerFor]="accountMenu" aria-label="Account menu">•••</button>
+        <mat-menu #accountMenu="matMenu"><button mat-menu-item (click)="auth.logout()">Sign out</button></mat-menu>
+      </div>
+    </aside>
+    <main><router-outlet /></main>
+  </div>
+</ng-container>
+<ng-template #guest><router-outlet /></ng-template>

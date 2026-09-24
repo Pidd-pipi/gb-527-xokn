@@ -1,0 +1,17 @@
+.timeline { min-width: 640px; }
+.axis { display: flex; justify-content: space-between; padding: 10px 14px 9px 180px; color: #66716d; background: #edf1ed; border-bottom: 1px solid #ccd3ce; font-size: 10px; }
+.lane { min-height: 74px; display: grid; grid-template-columns: 165px minmax(0, 1fr); border-bottom: 1px solid #e1e6e2; }
+.lane-label { padding: 16px 14px; border-right: 1px solid #d7ddd8; }
+.lane-label strong, .lane-label span { display: block; }
+.lane-label strong { font-size: 12px; }
+.lane-label span { margin-top: 4px; color: #66716d; font-size: 10px; }
+.track { position: relative; min-width: 0; margin: 11px 14px; background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - 1px), #e0e5e1 calc(25% - 1px), #e0e5e1 25%); }
+.window { position: absolute; top: 5px; min-width: 38px; height: 42px; overflow: hidden; padding: 5px 8px; border: 1px solid #266a63; border-radius: 2px; background: #d9ebe6; color: #143f3a; text-align: left; cursor: pointer; }
+.window:hover, .window:focus-visible { z-index: 2; transform: translateY(-2px); box-shadow: 0 3px 0 rgba(23, 63, 59, .18); }
+.window.locked { border-color: #a77b12; background: #fff0bb; color: #654a07; }
+.window span, .window small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.window span { font-size: 10px; font-weight: 800; }
+.window small { margin-top: 2px; font-size: 9px; }
+.selection { min-height: 48px; display: flex; align-items: center; gap: 14px; padding: 8px 14px; background: #f7f9f5; font-size: 11px; }
+.selection span { color: #66716d; margin-right: auto; }
+@media (max-width: 700px) { .timeline { min-width: 560px; } .lane { grid-template-columns: 130px minmax(0, 1fr); } .axis { padding-left: 145px; } }
